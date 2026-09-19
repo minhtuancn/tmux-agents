@@ -1,0 +1,60 @@
+┌───────────────────────────────────────────────────────────────┐
+│                     T M U X   H E L P                         │
+├───────────────────────────────────────────────────────────────┤
+│                                                               │
+│  PREFIX:  Ctrl+a  (thay vì Ctrl+b)                            │
+│                                                               │
+│  MENUS  (dùng chuột hoặc phím tắt)                            │
+│  ────────────────────────────────────────────────────────     │
+│  F1          Quick Actions  — thao tác nhanh hằng ngày        │
+│  Ctrl+a m    Tmux Menu      — quản lý window/pane/session     │
+│  Ctrl+a M    Manager Menu   — DevServer: proxy, docker, stats │
+│  Ctrl+a ?    Help           — hướng dẫn này                   │
+│                                                               │
+│  WINDOWS                                                     │
+│  ────────────────────────────────────────────────────────     │
+│  c           tạo window mới                                   │
+│  ,           đổi tên window                                   │
+│  &           kill window                                      │
+│  Tab         next window                                      │
+│  BTab        prev window                                      │
+│  0-9         chuyển đến window số                             │
+│  f           tìm window theo tên                              │
+│                                                               │
+│  PANES (chia ô)                                               │
+│  ────────────────────────────────────────────────────────     │
+│  |           split dọc (trái/phải)                            │
+│  -           split ngang (trên/dưới)                          │
+│  h/j/k/l     di chuyển pane (phím vim)                        │
+│  H/J/K/L     resize pane (Shift + vim)                        │
+│  z           zoom pane (phóng to/thu nhỏ)                     │
+│  q           hiển thị số pane                                 │
+│  x           kill pane                                        │
+│  !           biến pane thành cửa sổ riêng                     │
+│  { / }       swap pane trái / phải                            │
+│                                                               │
+│  SESSIONS                                                    │
+│  ────────────────────────────────────────────────────────     │
+│  s           chọn / quản lý session                           │
+│  d           detach (thoát, quay lại: t hoặc tmux a)         │
+│  $           đổi tên session                                  │
+│  ( / )       previous / next session                          │
+│                                                               │
+│  MANAGER MENU  (Ctrl+a M)                                     │
+│  ────────────────────────────────────────────────────────     │
+│  Status       trạng thái CLI tools                            │
+│  Proxy:On/Off bật/tắt 9Router proxy                           │
+│  Test         kiểm tra kết nối backend                        │
+│  Docker       xem containers & images                         │
+│  Stats        CPU / RAM / processes                            │
+│  Cleanup      dọn rác hệ thống                                │
+│  Full Menu    mở manager TUI đầy đủ                           │
+│                                                               │
+│  GÕ TIẾNG VIỆT TỪ iOS / UNICODE                               │
+│  ────────────────────────────────────────────────────────     │
+│  Hệ thống đã cấu hình UTF-8.                                  │
+│  Dùng bàn phím iOS gõ tiếng Việt bình thường.                │
+│  Nếu lỗi font: set locale = en_US.UTF-8                      │
+│                                                               │
+│  Nhấn q để đóng                                               │
+└───────────────────────────────────────────────────────────────┘
