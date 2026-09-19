@@ -132,6 +132,20 @@ frame_w() {  # độ rộng nội dung (cols - viền 2), min 76 = vừa đủ 7
   printf '%s' "$w"
 }
 
+# ── Preview nội dung phiên: capture pane active, tối đa PV_ROWS dòng ──
+PV_ROWS=12
+preview_session() {  # $1 = tên phiên
+  local name="$1" pid out n
+  pid=$(tmux list-panes -t "$name" -F "#{pane_active}:#{pane_id}" 2>/dev/null | awk -F: '$1==1{print $2; exit}')
+  [ -z "$pid" ] && pid=$(tmux list-panes -t "$name" -F '#{pane_id}' 2>/dev/null | head -1)
+  [ -z "$pid" ] && { printf '%s' "(không truy cập được)"; return; }
+  out=$(tmux capture-pane -p -t "$pid" 2>/dev/null)
+  [ -z "$out" ] && { printf '%s' "(trống)"; return; }
+  n=$(printf '%s\n' "$out" | wc -l)
+  printf '%s\n' "$out" | head -n "$PV_ROWS"
+  [ "$n" -gt "$PV_ROWS" ] && printf '( +%s dòng nữa )' "$((n - PV_ROWS))"
+}
+
 render() {
   local cur; cur=$(current_session)
   local fc=${#F_IDX[@]}
@@ -206,6 +220,21 @@ render() {
       fi
       pos=$((pos + 1))
     done
+
+    # ── Preview nội dung phiên đang chọn (chỉ khi có phiên) ──
+    printf "  %s\n" "$line_mid"
+    local pv_name="${S_NAME[${F_IDX[$selected]}]}"
+    if [ "$pv_name" = "$cur" ]; then
+      printf "  ${C_V}  ${DIM}Xem trước: %s — (phiên đang chạy picker này)${RST}\n" "$pv_name"
+    else
+      printf "  ${C_V}  ${CYN}Xem trước: %s${RST}\n" "$pv_name"
+      while IFS= read -r pl; do
+        pl="${pl//$'\t'/    }"
+        pl=$(printf '%s' "$pl" | LC_ALL=C tr -d '[:cntrl:]')
+        [ "${#pl}" -gt "$w" ] && pl="${pl:0:$w}"
+        printf "  ${C_V}  ${DIM}%s${RST}\n" "$pl"
+      done <<< "$(preview_session "$pv_name")"
+    fi
   fi
 
   echo ""
