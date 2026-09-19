@@ -138,7 +138,7 @@ render() {
   local w; w=$(frame_w)
   # header dùng CHÍNH pad_col như data → các cột thẳng hàng tuyệt đối
   local hdr
-  hdr="$(pad_col "PHIEN" 18) $(pad_col "THOI GIAN" 10) $(pad_col "CUA SO" 6) $(pad_col "UNG DUNG" 10) $(pad_col "DUONG DAN" 22)"
+  hdr="$(pad_col "Phiên" 18) $(pad_col "Thời gian" 10) $(pad_col "Cửa sổ" 6) $(pad_col "Ứng dụng" 10) $(pad_col "Đường dẫn" 22)"
 
   # lưu ý: KHÔNG dùng `tr ' ' "$C_H"` — tr chỉ thay byte đầu của ký tự multibyte
   # (─→ \xe2) → vỡ khung unicode. Dùng bash expansion (literal replacement, an toàn mb):
@@ -148,8 +148,8 @@ render() {
   line_mid=$(printf '%s%s%s' "$C_V"  "${sp// /$C_H}" "$C_V")
   line_bot=$(printf '%s%s%s' "$C_BL" "${sp// /$C_H}" "$C_BR")
 
-  local ti="DANH SACH PHIEN"
-  local tr="${fc} dang chay"
+  local ti="Danh sách phiên"
+  local tr="${fc} phiên đang chạy"
   # pad động: left = C_V(1)+2sp+title+2sp; right = 1sp+tr+2sp+C_V(1)
   local tp=$((w - ${#ti} - ${#tr} - 11)); [ "$tp" -lt 1 ] && tp=1
 
@@ -161,11 +161,11 @@ render() {
 
   if [ "$fc" -eq 0 ]; then
     if [ -n "$filter" ]; then
-      printf "  ${C_V}  ${DIM}Khong co phien khop: '%s'${RST}\n" "$filter"
+      printf "  ${C_V}  ${DIM}Không có phiên khớp: '%s'${RST}\n" "$filter"
     else
-      printf "  ${C_V}  ${DIM}Khong co phien tmux nao${RST}\n"
+      printf "  ${C_V}  ${DIM}Không có phiên tmux nào${RST}\n"
     fi
-    printf "  ${C_V}  ${DIM}Nhan ${BLD}n${RST}${DIM} de tao phien moi${RST}\n"
+    printf "  ${C_V}  ${DIM}Nhấn ${BLD}n${RST}${DIM} để tạo phiên mới${RST}\n"
   else
     # header thẳng cột với data: data có prefix 6 ký tự (2 indent + mũi tên + mark + 2 sp)
     printf "      ${DIM}%s${RST}\n" "$hdr"
@@ -207,8 +207,8 @@ render() {
   echo ""
   printf "  %s\n" "$line_mid"
   if [ "$fc" -gt 0 ]; then
-    printf "  ${C_V}  ${BLD}[1-%d]${RST} vao  ${BLD}Up/Down${RST} chon  ${BLD}Enter${RST} switch\n" "$fc"
-    printf "  ${C_V}  ${BLD}n${RST} tao  ${BLD}d${RST} xoa  ${BLD}r${RST} doi ten  ${BLD}f${RST} loc  ${BLD}R${RST} refresh  ${BLD}q${RST} thoat\n"
+    printf "  ${C_V}  ${BLD}[1-%d]${RST} vào  ${BLD}Up/Down${RST} chọn  ${BLD}Enter${RST} switch\n" "$fc"
+    printf "  ${C_V}  ${BLD}n${RST} tạo  ${BLD}d${RST} xóa  ${BLD}r${RST} đổi tên  ${BLD}f${RST} lọc  ${BLD}R${RST} refresh  ${BLD}q${RST} thoát\n"
   fi
   printf "  %s\n" "$line_bot"
   echo ""
