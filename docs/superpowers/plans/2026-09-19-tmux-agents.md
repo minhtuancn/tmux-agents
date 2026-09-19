@@ -234,9 +234,12 @@ render() {
   local w; w=$(frame_w)
   local hdr="SESSION     UPTIME   WINS  RUNNING     PATH"
 
-  line_top=$(printf '%s' "$C_TL"; printf '%*s' "$((w+2))" '' | tr ' ' "$C_H"; printf '%s' "$C_TR")
-  line_mid=$(printf '%s' "$C_V"; printf '%*s' "$((w+2))" '' | tr ' ' "$C_H"; printf '%s' "$C_V")
-  line_bot=$(printf '%s' "$C_BL"; printf '%*s' "$((w+2))" '' | tr ' ' "$C_H"; printf '%s' "$C_BR")
+  # lưu ý: KHÔNG dùng `tr ' ' "$C_H"` — tr chỉ thay byte đầu của ký tự multibyte
+  # (─→ \xe2) → vỡ khung unicode. Dùng bash expansion (literal replacement, an toàn mb):
+  local sp; sp=$(printf '%*s' "$((w+2))" '')
+  line_top=$(printf '%s%s%s' "$C_TL" "${sp// /$C_H}" "$C_TR")
+  line_mid=$(printf '%s%s%s' "$C_V"  "${sp// /$C_H}" "$C_V")
+  line_bot=$(printf '%s%s%s' "$C_BL" "${sp// /$C_H}" "$C_BR")
 
   clear
   echo ""
