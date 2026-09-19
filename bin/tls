@@ -123,6 +123,49 @@ pad_col() {  # $1=text $2=width $3=align(L|R)
 # ═══════════════════════════════════════════════════════════════════
 #  Render
 # ═══════════════════════════════════════════════════════════════════
+# ── Preview TRỰC TIẾP: display-popup attach session đang chọn (live thật) ──
+# Tmux không cho pane hiển thị nội dung session khác → dùng display-popup
+# (overlay tạo TTY riêng), trong popup chạy tls-pv.sh → attach-session.
+# Đổi chọn → đóng popup cũ + mở popup mới cho session được chọn.
+PV_OPEN=0
+PV_FILE=""
+pv_net=""
+
+pv_open() {   # mở popup preview (chỉ khi đang trong tmux; popup nằm nửa dưới)
+  [ -n "${TMUX:-}" ] || return 0
+  [ "$PV_OPEN" = "1" ] && return 0
+  [ "${#F_IDX[@]}" -eq 0 ] && return 0
+  local name="${S_NAME[${F_IDX[$selected]}]}"
+  PV_FILE=$(mktemp /tmp/tls-pv.XXXXXX)
+  printf '%s\n' "$name" > "$PV_FILE"
+  pv_net="$name"
+  pv_show
+  PV_OPEN=1
+}
+
+pv_show() {   # mở popup mới (nội dung = session trong $PV_FILE)
+  tmux display-popup -w 75% -h 45% -x C -y D \
+    -E "$HOME/.local/bin/tls-pv.sh '$PV_FILE'" 2>/dev/null
+}
+
+pv_sync() {   # $1 = tên session đang chọn → đóng + mở popup preview session đó
+  [ "$PV_OPEN" = "1" ] || return 0
+  [ "$1" = "$pv_net" ] && return 0
+  printf '%s\n' "$1" > "$PV_FILE"
+  pv_net="$1"
+  tmux display-popup -C 2>/dev/null   # đóng popup đang mở (attach cũ bị hủy)
+  pv_show
+}
+
+pv_close() {  # đóng popup preview + dọn file
+  if [ "$PV_OPEN" = "1" ]; then
+    tmux display-popup -C 2>/dev/null
+    PV_OPEN=0
+  fi
+  [ -n "$PV_FILE" ] && { rm -f "$PV_FILE"; PV_FILE=""; }
+  pv_net=""
+}
+
 frame_w() {  # độ rộng nội dung (cols - viền 2), min 76 = vừa đủ 7 cột (STT + 6)
   local cols
   cols=$(tput cols 2>/dev/null || echo 80)
@@ -170,13 +213,9 @@ render() {
   # → tp = w - ti - tr - 7; title full = 2(indent)+│+w+│ = khớp khung
   local tp=$((w - ${#ti} - ${#tr} - 7)); [ "$tp" -lt 1 ] && tp=1
 
-  # clear mỗi lần vẽ; khi AUTO_FRESH (refresh preview live 1s) bỏ clear để không nhấp nháy
-  if [ "$AUTO_FRESH" = "1" ]; then
-    AUTO_FRESH=0
-  else
-    clear
-    echo ""
-  fi
+  # clear mỗi lần vẽ (preview = display-popup live, không auto refresh)
+  clear
+  echo ""
   printf "  %s\n" "$line_top"
   printf "  ${C_V}  ${BLD}${CYN}${ti}${RST}  %${tp}s ${DIM}%s${RST}  ${C_V}\n" "" "$tr"
   printf "  %s\n" "$line_mid"
@@ -226,7 +265,11 @@ render() {
       pos=$((pos + 1))
     done
 
-    # ── Preview nội dung phiên đang chọn (chỉ khi có phiên) ──
+    # ── Preview nội dung phiên đang chọn ──
+    # Trong tmux: preview TRỰC TIẾP qua display-popup (attach session thật,
+    # đã mở từ pv_open/pv_sync). Block này chỉ dùng làm fallback khi chạy
+    # ngoài tmux (không thể mở popup trên server không có client view).
+    if [ "$PV_OPEN" = "0" ]; then
     printf "  %s\n" "$line_mid"
     local pv_name="${S_NAME[${F_IDX[$selected]}]}"
     if [ "$pv_name" = "$cur" ]; then
@@ -239,6 +282,7 @@ render() {
         [ "${#pl}" -gt "$((w - 1))" ] && pl="${pl:0:$((w - 1))}"
         printf "  ${C_V}  ${DIM}%s${RST}\n" "$pl"
       done <<< "$(preview_session "$pv_name")"
+    fi
     fi
   fi
 
@@ -256,9 +300,9 @@ render() {
 #  Input
 # ═══════════════════════════════════════════════════════════════════
 read_key() {
-  # -t 1: nếu 1 giây không có phím → trả '' → main loop tự refresh preview (live)
+  # blocking: chờ phím; preview live do popup (tls-pv.sh) đảm nhiệm
   local c=""
-  read -rsn1 -t 1 c 2>/dev/null || true
+  read -rsn1 c 2>/dev/null || true
   if [[ "$c" == $'\033' ]]; then
     local seq=""
     read -rsn2 -t 0.1 seq 2>/dev/null || true
@@ -377,19 +421,18 @@ do_filter() {
 # ── Khởi tạo 1 lần — thêm TRƯỚC vòng lặp main (trước `collect` đầu tiên) ──
 detect_unicode
 init_chars
-AUTO_FRESH=0
 
 collect
 build_filtered
 
+# Tự mở preview TRỰC TIẾP (display-popup attach session) khi đang trong tmux
+[ -n "${TMUX:-}" ] && pv_open
+
 while true; do
   render
+  # đồng bộ session đang chọn xuống popup preview (đổi theo vòng lặp chọn)
+  [ "$PV_OPEN" = "1" ] && [ "${#F_IDX[@]}" -gt 0 ] && pv_sync "${S_NAME[${F_IDX[$selected]}]}"
   key=$(read_key)
-  # không có phím trong 1s → tự refresh để preview hiển thị LIVE trạng thái phiên
-  if [ -z "$key" ]; then
-    AUTO_FRESH=1
-    continue
-  fi
 
   case "$key" in
     # ── Navigation ──
@@ -443,10 +486,18 @@ while true; do
       do_filter
       selected=0; build_filtered
       ;;
+    'p')                               # Toggle preview popup (chỉ trong tmux)
+      if [ "$PV_OPEN" = "1" ]; then
+        pv_close
+      else
+        pv_open
+      fi
+      ;;
     'R')                               # Refresh
       collect; build_filtered
       ;;
     'q'|'Q'|$'\033')                   # Quit
+      pv_close
       clear; exit 0
       ;;
   esac
