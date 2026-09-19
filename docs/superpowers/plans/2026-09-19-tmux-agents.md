@@ -271,7 +271,8 @@ render() {
       local mark=" "; [ "$name" = "$cur" ] && mark="$C_AT"
 
       if [ "$sel" = "1" ]; then
-        printf "  ${BGRY}${C_V} ${C_CUR}%s %s %s %s %s %s${RST}\n" \
+        # spec: dòng chọn = nền dim (48;5;236) + chữ đậm cyan
+        printf "  ${BGRY}${BLD}${CYN} ${C_CUR}%s %s %s %s %s %s${RST}\n" \
           "$mark" \
           "$(pad_col "$name" 18)" \
           "$(pad_col "$u" 10)" \
