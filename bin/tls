@@ -123,12 +123,12 @@ pad_col() {  # $1=text $2=width $3=align(L|R)
 # ═══════════════════════════════════════════════════════════════════
 #  Render
 # ═══════════════════════════════════════════════════════════════════
-frame_w() {  # độ rộng nội dung (cols - viền 2), min 72 = vừa đủ 6 cột tiếng Việt
+frame_w() {  # độ rộng nội dung (cols - viền 2), min 76 = vừa đủ 7 cột (STT + 6)
   local cols
   cols=$(tput cols 2>/dev/null || echo 80)
   local w=$((cols - 4))
   [ "$w" -gt 84 ] && w=84
-  [ "$w" -lt 72 ] && w=72
+  [ "$w" -lt 76 ] && w=76
   printf '%s' "$w"
 }
 
@@ -136,9 +136,11 @@ render() {
   local cur; cur=$(current_session)
   local fc=${#F_IDX[@]}
   local w; w=$(frame_w)
-  # header dùng CHÍNH pad_col như data → các cột thẳng hàng tuyệt đối
+  # header dùng CHÍNH pad_col như data → các cột thẳng hàng tuyệt đối.
+  # prefix "  STT   " = 2 indent + STT(3) + 3 sp (mark + 2 phân cách) = 8 ký tự,
+  # khớp chính xác prefix data (2 + stt(3) + 1 + mark(1) + 1)
   local hdr
-  hdr="$(pad_col "Phiên" 18) $(pad_col "Thời gian" 10) $(pad_col "Cửa sổ" 6) $(pad_col "Ứng dụng" 10) $(pad_col "Đường dẫn" 22)"
+  hdr="  $(pad_col "STT" 3 R)   $(pad_col "Phiên" 16) $(pad_col "Thời gian" 10) $(pad_col "Cửa sổ" 6) $(pad_col "Ứng dụng" 10) $(pad_col "Đường dẫn" 20)"
 
   # lưu ý: KHÔNG dùng `tr ' ' "$C_H"` — tr chỉ thay byte đầu của ký tự multibyte
   # (─→ \xe2) → vỡ khung unicode. Dùng bash expansion (literal replacement, an toàn mb):
@@ -167,8 +169,8 @@ render() {
     fi
     printf "  ${C_V}  ${DIM}Nhấn ${BLD}n${RST}${DIM} để tạo phiên mới${RST}\n"
   else
-    # header thẳng cột với data: data có prefix 6 ký tự (2 indent + mũi tên + mark + 2 sp)
-    printf "      ${DIM}%s${RST}\n" "$hdr"
+    # header thẳng cột với data: data prefix 8 ký tự (2 indent + STT 3 + mark + 2 sp)
+    printf "${DIM}%s${RST}\n" "$hdr"
     printf "  %s\n" "$line_mid"
 
     local pos=0
@@ -181,24 +183,25 @@ render() {
       [[ ${#name} -gt 12 ]] && name="${name:0:10}.."
 
       local sel="0"; [ "$pos" -eq "$selected" ] && sel="1"
-      local sc=" "; [ "$sel" = "1" ] && sc="$C_CUR"
       local mark=" "; [ "$name" = "$cur" ] && mark="$C_AT"
 
       if [ "$sel" = "1" ]; then
-        # spec: dòng chọn = nền dim (48;5;236) + chữ đậm cyan
-        printf "  ${BGRY}${BLD}${CYN}${sc} ${mark} %s %s %s %s %s %s${RST}\n" \
-          "$(pad_col "$name" 18)" \
+        # spec: dòng chọn = nền dim (48;5;236) + chữ đậm cyan; STT = số thứ tự
+        local stt_str; stt_str=$(pad_col "$((pos + 1))" 3 R)
+        printf "  ${BGRY}${BLD}${CYN}${stt_str} ${mark} %s %s %s %s %s %s${RST}\n" \
+          "$(pad_col "$name" 16)" \
           "$(pad_col "$u" 10)" \
           "$(pad_col "$wl" 6)" \
           "$(pad_col "$r" 10)" \
-          "$(pad_col "$p" 22)"
+          "$(pad_col "$p" 20)"
       else
-        printf "  ${sc} ${mark} %s %s %s %s %s %s\n" \
-          "$(pad_col "$name" 18)" \
+        local stt_str; stt_str=$(pad_col "$((pos + 1))" 3 R)
+        printf "  ${stt_str} ${mark} %s %s %s %s %s %s\n" \
+          "$(pad_col "$name" 16)" \
           "$(pad_col "$u" 10)" \
           "$(pad_col "$wl" 6)" \
           "$(pad_col "$r" 10)" \
-          "$(pad_col "$p" 22)"
+          "$(pad_col "$p" 20)"
       fi
       pos=$((pos + 1))
     done
