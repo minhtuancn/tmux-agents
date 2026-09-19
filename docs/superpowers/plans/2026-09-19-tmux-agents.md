@@ -219,12 +219,12 @@ pad_col() {  # $1=text $2=width $3=align(L|R)
 - [ ] **Step 3: Thay toàn bộ hàm `render()` bằng code dưới**
 
 ```bash
-frame_w() {  # độ rộng nội dung (cols - viền 2), giới hạn để không vỡ
+frame_w() {  # độ rộng nội dung (cols - viền 2), min 66 = vừa đủ 6 cột
   local cols
   cols=$(tput cols 2>/dev/null || echo 80)
   local w=$((cols - 4))
   [ "$w" -gt 84 ] && w=84
-  [ "$w" -lt 40 ] && w=40
+  [ "$w" -lt 66 ] && w=66
   printf '%s' "$w"
 }
 
@@ -268,7 +268,7 @@ render() {
       local mark=" "; [ "$name" = "$cur" ] && mark="$C_AT"
 
       if [ "$sel" = "1" ]; then
-        printf "  ${BGRY}${C_V} ${CUR}%s %s%s %s%s %s %s%s${RST}\n" \
+        printf "  ${BGRY}${C_V} ${C_CUR}%s %s %s %s %s %s${RST}\n" \
           "$mark" \
           "$(pad_col "$name" 18)" \
           "$(pad_col "$u" 10)" \
@@ -276,7 +276,7 @@ render() {
           "$(pad_col "$r" 10)" \
           "$(pad_col "$p" 22)"
       else
-        printf "  ${C_V}  %s %s %s %s %s %s${RST}\n" \
+        printf "  ${C_V}  %s %s %s %s %s %s ${RST}\n" \
           "$mark" \
           "$(pad_col "$name" 18)" \
           "$(pad_col "$u" 10)" \
@@ -369,7 +369,7 @@ set -g status-interval 2
 set -g status-position top
 set -g status-style "bg=#1a1b26,fg=#c0caf5"
 # ── Status bar: SESSION (đậm) + APP (đậm) + path (~-short, rút gọn giữ đuôi) ──
-set -g status-left "#[bg=#7aa2f7,fg=#1a1b26,bold] #S #[bg=#7dcfff,fg=#16161e,bold] #W #[bg=#292e42,fg=#a9b1d6]  ~#{=<-24:#{s|#{HOME}|~|:pane_current_path}} "
+set -g status-left "#[bg=#7aa2f7,fg=#1a1b26,bold] #S #[bg=#7dcfff,fg=#16161e,bold] #W #[bg=#292e42,fg=#a9b1d6]  #{=<-24:#{s|#{HOME}|~|:pane_current_path}} "
 set -g status-left-length 66
 # ── Status bar: giờ GMT+7 cố định qua script + host ──
 set -g status-right "#[bg=#292e42,fg=#a9b1d6] #(~/.tmux/bin/vn-time.sh) GMT+7 #[bg=#bb9af7,fg=#1a1b26,bold] #h "
@@ -740,10 +740,9 @@ Nếu chưa có remote: `git remote add origin https://github.com/minhtuancn/tmu
 - [ ] **Step 2: Push (repo đích gần như trống — user đã duyệt khởi tạo)**
 
 ```bash
-git pull --rebase origin main 2>/dev/null || true   # nhỡ có commit mới trên remote
 git push -u origin main --force-with-lease
 ```
-Dùng `--force-with-lease` (không phải `-f` trần): bảo vệ nếu ai khác vô tình push. Giải thích: remote hiện chỉ có LICENSE+README (56B), local là lịch sử mới nên buộc phải force; LICENSE được Task 5 fetch giữ nguyên.
+Dùng `--force-with-lease` (không phải `-f` trần): bảo vệ nếu ai khác vô tình push. Giải thích: remote hiện chỉ có LICENSE+README (56B), local là lịch sử mới nên buộc phải force; LICENSE được Task 5 fetch giữ nguyên. KHÔNG `git pull --rebase` trước push — remote main chỉ có 1 commit rời, rebase sẽ conflict vô ích với README/LICENSE local.
 
 - [ ] **Step 3: Verify trên GitHub**
 
