@@ -86,10 +86,48 @@ Lưu ý kỹ thuật (đã verify trong môi trường dev):
 
 ## 4. bin/t và bin/tls
 
-### 4.1 bin/tls (giữ, tinh chỉnh nhẹ)
-- Code hiện tại `~/.local/bin/tls` (11.4KB, v3): list sessions theo activity, cột #/SESSION/UPTIME/WINS/RUNNING/PATH; điều hướng ↑↓jk, chọn số 1-9, n=new, d=delete, r=rename, f=filter, R=refresh, q=thoát.
-- Đã tự xử lý: trong tmux → `switch-client`; ngoài tmux → `attach-session`.
-- **Tinh chỉnh**: PATH cột hiện truncate 25 ký tự kiểu `"...${p: -22}"` → đổi thành: `~`-short + giữ đuôi (rõ thư mục cuối), nhất quán với status bar.
+### 4.1 bin/tls — redesign "Table Pro" (adaptive frame)
+
+Giữ toàn bộ logic hiện có (list → select → switch/attach, n/d/r/f/R/q, quick number, filter, new session tạo + attach), **redesign phần render**:
+
+**Mockup mục tiêu (kiểu UTF-8):**
+```
+  ╭─ TMUX SESSIONS ──────────────────────── 3 đang chạy ─╮
+  │                                                        │
+  │    #  SESSION    RUNNING   UPTIME    WIN   PATH        │
+  │  ───────────────────────────────────────────────────── │
+  │  ● 1 main      ▸ bash      2d03h     2w    ~/tmux      │
+  │  ❯ 2 dev-api   ▸ nvim      5h12m     3w    ~/dev/api   │
+  │    3 deploy    ▸ bash      12m       1w    /srv/deploy │
+  │                                                        │
+  │  [1-9] vào · ↑↓/jk chọn · n tạo · d xoá · r đổi tên · │
+  │  f lọc · R refresh · q thoát                          │
+  ╰────────────────────────────────────────────────────────╯
+```
+
+**Cơ chế chống vỡ khung (bắt buộc):**
+1. **Auto-detect UTF-8**: `locale charmap` hoặc `$LANG`/`$LC_ALL` chứa `UTF-8` → khung unicode; ngược lại → khung ASCII:
+   ```
+   +-- TMUX SESSIONS -----------------------------+
+   |  #  SESSION  RUNNING  UPTIME  WIN  PATH      |
+   +----------------------------------------------+  (đỉnh/gạch dưới)
+   |  ...                                         |
+   +----------------------------------------------+
+   ```
+2. **Env override**: `TLS_STYLE=ascii|unicode` (mặc định auto).
+3. **Căn chỉnh theo display width** (đếm ký tự, không đếm byte — dùng `wc -m` hoặc `${#}` với locale UTF-8) → tên session chứa dấu tiếng Việt/unicode không làm lệch cột.
+4. PATH cột: `~`-short + giữ đuôi tối đa 22 ký tự (nhất quán status bar).
+
+**Màu (Tokyo Night, đồng bộ tmux.conf):**
+- Viền/title: cyan `#7dcfff` (ANSI 36/1), header dim
+- Dòng chọn: **nền dim `#292e42` (ANSI 48;5;236) + chữ đậm cyan**, marker `❯` (unicode) / `>` (ascii)
+- Dòng thường: dim nhạt; marker `●` (unicode) / `*` (ascii) cho session hiện tại
+- Footer phím tắt: dim, tách bằng `·`
+- Số thứ tự: vàng (giữ style hiện tại)
+
+**Vẫn giữ**: current-session marker, sort theo activity (mới nhất trên), trong-tmux → `switch-client`, ngoài → `attach-session`, filter, new/delete(confirm)/rename, empty state có gợi ý `n`.
+
+Nếu khung vẫn không đẹp trên terminal đặc thù (font/emulator phá glyph dù đã UTF-8) → phương án dự phòng "Icon-rich" (emoji cột, bỏ hẳn khung viền) như đã bàn — quyết định khi verify live.
 
 ### 4.2 bin/t (mới)
 ```bash
