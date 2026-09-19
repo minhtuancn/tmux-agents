@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# t — vào tmux: chưa có session nào → tạo/attach main; đã có → picker tls
+set -uo pipefail
+
+if ! tmux has-session 2>/dev/null; then
+  exec tmux new-session -A -s main
+fi
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec "$DIR/tls"
