@@ -170,8 +170,13 @@ render() {
   # → tp = w - ti - tr - 7; title full = 2(indent)+│+w+│ = khớp khung
   local tp=$((w - ${#ti} - ${#tr} - 7)); [ "$tp" -lt 1 ] && tp=1
 
-  clear
-  echo ""
+  # clear mỗi lần vẽ; khi AUTO_FRESH (refresh preview live 1s) bỏ clear để không nhấp nháy
+  if [ "$AUTO_FRESH" = "1" ]; then
+    AUTO_FRESH=0
+  else
+    clear
+    echo ""
+  fi
   printf "  %s\n" "$line_top"
   printf "  ${C_V}  ${BLD}${CYN}${ti}${RST}  %${tp}s ${DIM}%s${RST}  ${C_V}\n" "" "$tr"
   printf "  %s\n" "$line_mid"
@@ -231,7 +236,7 @@ render() {
       while IFS= read -r pl; do
         pl="${pl//$'\t'/    }"
         pl=$(printf '%s' "$pl" | LC_ALL=C tr -d '[:cntrl:]')
-        [ "${#pl}" -gt "$w" ] && pl="${pl:0:$w}"
+        [ "${#pl}" -gt "$((w - 1))" ] && pl="${pl:0:$((w - 1))}"
         printf "  ${C_V}  ${DIM}%s${RST}\n" "$pl"
       done <<< "$(preview_session "$pv_name")"
     fi
@@ -251,8 +256,9 @@ render() {
 #  Input
 # ═══════════════════════════════════════════════════════════════════
 read_key() {
+  # -t 1: nếu 1 giây không có phím → trả '' → main loop tự refresh preview (live)
   local c=""
-  read -rsn1 c
+  read -rsn1 -t 1 c 2>/dev/null || true
   if [[ "$c" == $'\033' ]]; then
     local seq=""
     read -rsn2 -t 0.1 seq 2>/dev/null || true
@@ -371,6 +377,7 @@ do_filter() {
 # ── Khởi tạo 1 lần — thêm TRƯỚC vòng lặp main (trước `collect` đầu tiên) ──
 detect_unicode
 init_chars
+AUTO_FRESH=0
 
 collect
 build_filtered
@@ -378,6 +385,11 @@ build_filtered
 while true; do
   render
   key=$(read_key)
+  # không có phím trong 1s → tự refresh để preview hiển thị LIVE trạng thái phiên
+  if [ -z "$key" ]; then
+    AUTO_FRESH=1
+    continue
+  fi
 
   case "$key" in
     # ── Navigation ──
