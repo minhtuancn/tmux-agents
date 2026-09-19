@@ -1,0 +1,390 @@
+#!/usr/bin/env bash
+# tls — Tmux List & Select (v3 — clean ASCII, number selection)
+set -uo pipefail
+
+# ═══════════════════════════════════════════════════════════════════
+#  Colors
+# ═══════════════════════════════════════════════════════════════════
+RST='\033[0m'   BLD='\033[1m'   DIM='\033[2m'
+CYN='\033[36m'  GRN='\033[32m'  YLW='\033[33m'
+RED='\033[31m'  MAG='\033[35m'  WHT='\033[37m'
+BGREEN='\033[42m'  BYLW='\033[43m'  BGRY='\033[48;5;236m'
+
+# ═══════════════════════════════════════════════════════════════════
+#  State
+# ═══════════════════════════════════════════════════════════════════
+declare -a S_NAME=()
+declare -a S_CREATED=()
+declare -a S_ACTIVITY=()
+declare -a S_WINDOWS=()
+declare -a S_WINDOW=()
+declare -a S_PATH=()
+declare -a S_ATTACHED=()
+
+declare -a F_IDX=()
+filter=""
+selected=0
+
+# ═══════════════════════════════════════════════════════════════════
+#  Helpers
+# ═══════════════════════════════════════════════════════════════════
+# ── Display width (bỏ ANSI, đếm ký tự) ──
+dwc() { local s; s=$(printf '%s' "$1" | sed -E 's/\x1b\[[0-9;]*[A-Za-z]//g'); printf '%s' "${#s}"; }
+
+# ── Detect unicode frame ──
+UNICODE=0
+detect_unicode() {
+  case "${TLS_STYLE:-auto}" in
+    ascii)   UNICODE=0 ;;
+    unicode) UNICODE=1 ;;
+    *)
+      case "$(locale charmap 2>/dev/null)" in
+        UTF-8|utf8) UNICODE=1 ;;
+        *)          UNICODE=0 ;;
+      esac ;;
+  esac
+}
+
+# ── Bộ ký tự khung ──
+C_TL=+; C_TR=+; C_BL=+; C_BR=+; C_H=-; C_V="|"; C_CUR=">"; C_AT="*"
+init_chars() {
+  if [ "$UNICODE" = 1 ]; then
+    C_TL="╭"; C_TR="╮"; C_BL="╰"; C_BR="╯"
+    C_H="─"; C_V="│"; C_CUR="❯"; C_AT="●"
+  fi
+}
+
+current_session() {
+  [ -n "${TMUX:-}" ] && tmux display-message -p '#{session_name}' 2>/dev/null || echo ""
+}
+
+collect() {
+  S_NAME=(); S_CREATED=(); S_ACTIVITY=(); S_WINDOWS=()
+  S_WINDOW=(); S_PATH=(); S_ATTACHED=()
+
+  while IFS='|' read -r act name created wins win path attached; do
+    [ -z "$name" ] && continue
+    S_NAME+=("$name");      S_CREATED+=("$created")
+    S_ACTIVITY+=("$act");   S_WINDOWS+=("$wins")
+    S_WINDOW+=("$win");     S_PATH+=("$path")
+    S_ATTACHED+=("$attached")
+  done < <(tmux list-sessions \
+    -F '#{session_activity}|#{session_name}|#{session_created}|#{session_windows}|#{window_name}|#{pane_current_path}|#{session_attached}' \
+    2>/dev/null | sort -t'|' -k1 -rn)
+}
+
+build_filtered() {
+  F_IDX=()
+  local cur; cur=$(current_session)
+  local n=${#S_NAME[@]}
+
+  for ((i=0; i<n; i++)); do
+    if [ -n "$filter" ]; then
+      local ln="${S_NAME[$i],,}" lf="${filter,,}" lp="${S_PATH[$i],,}"
+      [[ "$ln" == *"$lf"* || "$lp" == *"$lf"* ]] || continue
+    fi
+    F_IDX+=("$i")
+  done
+
+  local fc=${#F_IDX[@]}
+  [ "$selected" -ge "$fc" ] && selected=$(( fc > 0 ? fc - 1 : 0 ))
+}
+
+uptime_str() {
+  local c=$1 now diff d h m
+  now=$(date +%s)
+  diff=$((now - c))
+  if   (( diff < 60 ));    then printf '%ds' "$diff"
+  elif (( diff < 3600 ));  then printf '%dm' "$((diff / 60))"
+  elif (( diff < 86400 )); then d=$((diff / 3600)); m=$(((diff % 3600) / 60)); printf '%dh%02dm' "$d" "$m"
+  else                            d=$((diff / 86400)); h=$(((diff % 86400) / 3600)); printf '%dd%02dh' "$d" "$h"
+  fi
+}
+
+short_path() {
+  # ~-short + giữ đuôi tối đa 22 ký tự (thư mục cuối luôn lộ)
+  local p="$1"
+  [ -z "$p" ] && { echo "-"; return; }
+  case "$p" in
+    "$HOME"*) p="~${p#"$HOME"}" ;;
+  esac
+  [ "${#p}" -gt 22 ] && p="...${p: -19}"
+  printf '%s' "$p"
+}
+
+pad_col() {  # $1=text $2=width $3=align(L|R)
+  local t="$1" w="$2" a="${3:-L}" len pad
+  len=$(dwc "$t")
+  [ "$len" -ge "$w" ] && { printf '%s' "$t"; return; }
+  pad=$((w - len))
+  if [ "$a" = "R" ]; then printf '%'"$pad"'s%s' '' "$t"; else printf '%s%'"$pad"'s' "$t" ''; fi
+}
+
+# ═══════════════════════════════════════════════════════════════════
+#  Render
+# ═══════════════════════════════════════════════════════════════════
+frame_w() {  # độ rộng nội dung (cols - viền 2), min 66 = vừa đủ 6 cột
+  local cols
+  cols=$(tput cols 2>/dev/null || echo 80)
+  local w=$((cols - 4))
+  [ "$w" -gt 84 ] && w=84
+  [ "$w" -lt 66 ] && w=66
+  printf '%s' "$w"
+}
+
+render() {
+  local cur; cur=$(current_session)
+  local fc=${#F_IDX[@]}
+  local w; w=$(frame_w)
+  local hdr="SESSION     UPTIME   WINS  RUNNING     PATH"
+
+  line_top=$(printf '%s' "$C_TL"; printf '%*s' "$((w+2))" '' | tr ' ' "$C_H"; printf '%s' "$C_TR")
+  line_mid=$(printf '%s' "$C_V"; printf '%*s' "$((w+2))" '' | tr ' ' "$C_H"; printf '%s' "$C_V")
+  line_bot=$(printf '%s' "$C_BL"; printf '%*s' "$((w+2))" '' | tr ' ' "$C_H"; printf '%s' "$C_BR")
+
+  clear
+  echo ""
+  printf "  %s\n" "$line_top"
+  printf "  ${BLD}${CYN}  TMUX SESSIONS${RST}  %*s ${DIM}%d dang chay${RST}\n" "$((w-15))" "" "$fc"
+  printf "  %s\n" "$line_mid"
+
+  if [ "$fc" -eq 0 ]; then
+    if [ -n "$filter" ]; then
+      printf "  ${C_V}  ${DIM}No sessions match '%s'${RST}\n" "$filter"
+    else
+      printf "  ${C_V}  ${DIM}No tmux sessions found${RST}\n"
+    fi
+    printf "  ${C_V}  ${DIM}Press ${BLD}n${RST}${DIM} to create a new session${RST}\n"
+  else
+    printf "  ${C_V}  ${DIM}%s${RST}\n" "$hdr"
+    printf "  %s\n" "$line_mid"
+
+    local pos=0
+    for i in "${F_IDX[@]}"; do
+      local u; u=$(uptime_str "${S_CREATED[$i]}")
+      local wl; wl="${S_WINDOWS[$i]}w"
+      local r="${S_WINDOW[$i]}"
+      local p; p=$(short_path "${S_PATH[$i]}")
+      local name="${S_NAME[$i]}"
+      [[ ${#name} -gt 12 ]] && name="${name:0:10}.."
+
+      local sel="0"; [ "$pos" -eq "$selected" ] && sel="1"
+      local mark=" "; [ "$name" = "$cur" ] && mark="$C_AT"
+
+      if [ "$sel" = "1" ]; then
+        printf "  ${BGRY}${C_V} ${C_CUR}%s %s %s %s %s %s${RST}\n" \
+          "$mark" \
+          "$(pad_col "$name" 18)" \
+          "$(pad_col "$u" 10)" \
+          "$(pad_col "$wl" 6)" \
+          "$(pad_col "$r" 10)" \
+          "$(pad_col "$p" 22)"
+      else
+        printf "  ${C_V}  %s %s %s %s %s %s ${RST}\n" \
+          "$mark" \
+          "$(pad_col "$name" 18)" \
+          "$(pad_col "$u" 10)" \
+          "$(pad_col "$wl" 6)" \
+          "$(pad_col "$r" 10)" \
+          "$(pad_col "$p" 22)"
+      fi
+      pos=$((pos + 1))
+    done
+  fi
+
+  echo ""
+  printf "  %s\n" "$line_mid"
+  if [ "$fc" -gt 0 ]; then
+    printf "  ${C_V}  ${BLD}[1-%d]${RST} vao  ${BLD}Up/Down${RST} chon  ${BLD}Enter${RST} switch\n" "$fc"
+    printf "  ${C_V}  ${BLD}n${RST} tao  ${BLD}d${RST} xoa  ${BLD}r${RST} doi ten  ${BLD}f${RST} loc  ${BLD}R${RST} refresh  ${BLD}q${RST} thoat\n"
+  fi
+  printf "  %s\n" "$line_bot"
+  echo ""
+}
+
+# ═══════════════════════════════════════════════════════════════════
+#  Input
+# ═══════════════════════════════════════════════════════════════════
+read_key() {
+  local c=""
+  read -rsn1 c
+  if [[ "$c" == $'\033' ]]; then
+    local seq=""
+    read -rsn2 -t 0.1 seq 2>/dev/null || true
+    c="${c}${seq}"
+  fi
+  printf '%s' "$c"
+}
+
+# ═══════════════════════════════════════════════════════════════════
+#  Actions
+# ═══════════════════════════════════════════════════════════════════
+do_switch() {
+  local idx="${F_IDX[$1]}"
+  local name="${S_NAME[$idx]}"
+  local cur; cur=$(current_session)
+
+  [ "$name" = "$cur" ] && return
+
+  if [ -n "${TMUX:-}" ]; then
+    tmux switch-client -t "$name" 2>/dev/null
+  else
+    exec tmux attach-session -t "$name"
+  fi
+}
+
+do_new() {
+  clear
+  echo ""
+  printf "  ${BLD}${CYN}New Session${RST}\n"
+  printf "  ${DIM}------------${RST}\n\n"
+
+  read -r -p "  Name: " name
+  [ -z "$name" ] && return
+
+  printf "\n  ${DIM}Directory (Enter = $PWD):${RST}\n"
+  read -e -p "  > " dir
+  [ -z "$dir" ] && dir="$PWD"
+
+  if [ ! -d "$dir" ]; then
+    printf "\n  ${RED}Not found: %s${RST}\n" "$dir"
+    read -r -p "  Press Enter..."
+    return
+  fi
+
+  tmux new-session -d -s "$name" -c "$dir"
+
+  if [ -n "${TMUX:-}" ]; then
+    tmux switch-client -t "$name" 2>/dev/null
+  else
+    exec tmux attach-session -t "$name"
+  fi
+}
+
+do_delete() {
+  local idx="${F_IDX[$1]}"
+  local name="${S_NAME[$idx]}"
+
+  echo ""
+  printf "  ${RED}Delete '${BLD}%s${RST}${RED}'? [y/N]${RST} " "$name"
+  read -rsn1 confirm; echo ""
+
+  if [[ "$confirm" =~ ^[Yy]$ ]]; then
+    tmux kill-session -t "$name" 2>/dev/null
+    collect
+    build_filtered
+  fi
+}
+
+do_rename() {
+  local idx="${F_IDX[$1]}"
+  local name="${S_NAME[$idx]}"
+
+  echo ""
+  printf "  Rename '${BLD}%s${RST}' to: " "$name"
+  read -r newname
+
+  if [ -n "$newname" ]; then
+    tmux rename-session -t "$name" "$newname" 2>/dev/null
+    collect
+    build_filtered
+  fi
+}
+
+do_filter() {
+  local fi="$filter"
+
+  echo ""
+  printf "  ${DIM}Filter:${RST} "
+  while true; do
+    tput el 2>/dev/null
+    printf "${YLW}%s${DIM}_${RST}" "$fi"
+
+    local c=""
+    read -rsn1 c
+
+    case "$c" in
+      $'\033')                         # Esc → clear
+        filter=""
+        return ;;
+      $'\177'|$'\010')                 # Backspace
+        fi="${fi:0:-1}"
+        printf "\b \b" ;;
+      $'\n'|$'\r')                     # Enter → apply
+        filter="$fi"
+        echo ""
+        return ;;
+      *)                               # Any other char
+        fi+="$c" ;;
+    esac
+  done
+}
+
+# ═══════════════════════════════════════════════════════════════════
+#  Main loop
+# ═══════════════════════════════════════════════════════════════════
+# ── Khởi tạo 1 lần — thêm TRƯỚC vòng lặp main (trước `collect` đầu tiên) ──
+detect_unicode
+init_chars
+
+collect
+build_filtered
+
+while true; do
+  render
+  key=$(read_key)
+
+  case "$key" in
+    # ── Navigation ──
+    $'\033[A')                         # Up arrow
+      (( selected-- ))
+      [ "$selected" -lt 0 ] && selected=$(( ${#F_IDX[@]} - 1 ))
+      ;;
+    $'\033[B')                         # Down arrow
+      (( selected++ ))
+      [ "$selected" -ge "${#F_IDX[@]}" ] && selected=0
+      ;;
+    'k')                               # vim up
+      (( selected-- ))
+      [ "$selected" -lt 0 ] && selected=$(( ${#F_IDX[@]} - 1 ))
+      ;;
+    'j')                               # vim down
+      (( selected++ ))
+      [ "$selected" -ge "${#F_IDX[@]}" ] && selected=0
+      ;;
+
+    # ── Quick number select (1-9) ──
+    [1-9])
+      pick=$(( ${key#0} - 1 ))
+      if [ "$pick" -lt "${#F_IDX[@]}" ]; then
+        selected="$pick"
+        do_switch "$selected"
+      fi
+      ;;
+
+    # ── Actions ──
+    '')                                 # Enter → switch
+      [ "${#F_IDX[@]}" -gt 0 ] && do_switch "$selected"
+      ;;
+    'n'|'0')                           # New session
+      do_new
+      collect; build_filtered; selected=0
+      ;;
+    'd')                               # Delete session
+      [ "${#F_IDX[@]}" -gt 0 ] && do_delete "$selected"
+      ;;
+    'r')                               # Rename session
+      [ "${#F_IDX[@]}" -gt 0 ] && do_rename "$selected"
+      ;;
+    'f')                               # Filter
+      do_filter
+      selected=0; build_filtered
+      ;;
+    'R')                               # Refresh
+      collect; build_filtered
+      ;;
+    'q'|'Q'|$'\033')                   # Quit
+      clear; exit 0
+      ;;
+  esac
+done
