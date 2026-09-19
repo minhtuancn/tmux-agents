@@ -123,12 +123,12 @@ pad_col() {  # $1=text $2=width $3=align(L|R)
 # ═══════════════════════════════════════════════════════════════════
 #  Render
 # ═══════════════════════════════════════════════════════════════════
-frame_w() {  # độ rộng nội dung (cols - viền 2), min 66 = vừa đủ 6 cột
+frame_w() {  # độ rộng nội dung (cols - viền 2), min 72 = vừa đủ 6 cột tiếng Việt
   local cols
   cols=$(tput cols 2>/dev/null || echo 80)
   local w=$((cols - 4))
   [ "$w" -gt 84 ] && w=84
-  [ "$w" -lt 66 ] && w=66
+  [ "$w" -lt 72 ] && w=72
   printf '%s' "$w"
 }
 
@@ -136,7 +136,9 @@ render() {
   local cur; cur=$(current_session)
   local fc=${#F_IDX[@]}
   local w; w=$(frame_w)
-  local hdr="SESSION     UPTIME   WINS  RUNNING     PATH"
+  # header dùng CHÍNH pad_col như data → các cột thẳng hàng tuyệt đối
+  local hdr
+  hdr="$(pad_col "PHIEN" 18) $(pad_col "THOI GIAN" 10) $(pad_col "CUA SO" 6) $(pad_col "UNG DUNG" 10) $(pad_col "DUONG DAN" 22)"
 
   # lưu ý: KHÔNG dùng `tr ' ' "$C_H"` — tr chỉ thay byte đầu của ký tự multibyte
   # (─→ \xe2) → vỡ khung unicode. Dùng bash expansion (literal replacement, an toàn mb):
@@ -146,24 +148,27 @@ render() {
   line_mid=$(printf '%s%s%s' "$C_V"  "${sp// /$C_H}" "$C_V")
   line_bot=$(printf '%s%s%s' "$C_BL" "${sp// /$C_H}" "$C_BR")
 
+  local ti="DANH SACH PHIEN"
   local tr="${fc} dang chay"
-  local tp=$((w - ${#tr} - 20)); [ "$tp" -lt 1 ] && tp=1
+  # pad động: left = C_V(1)+2sp+title+2sp; right = 1sp+tr+2sp+C_V(1)
+  local tp=$((w - ${#ti} - ${#tr} - 11)); [ "$tp" -lt 1 ] && tp=1
 
   clear
   echo ""
   printf "  %s\n" "$line_top"
-  printf "  ${C_V}  ${BLD}${CYN}TMUX SESSIONS${RST}  %${tp}s ${DIM}%s${RST}  ${C_V}\n" "" "$tr"
+  printf "  ${C_V}  ${BLD}${CYN}${ti}${RST}  %${tp}s ${DIM}%s${RST}  ${C_V}\n" "" "$tr"
   printf "  %s\n" "$line_mid"
 
   if [ "$fc" -eq 0 ]; then
     if [ -n "$filter" ]; then
-      printf "  ${C_V}  ${DIM}No sessions match '%s'${RST}\n" "$filter"
+      printf "  ${C_V}  ${DIM}Khong co phien khop: '%s'${RST}\n" "$filter"
     else
-      printf "  ${C_V}  ${DIM}No tmux sessions found${RST}\n"
+      printf "  ${C_V}  ${DIM}Khong co phien tmux nao${RST}\n"
     fi
-    printf "  ${C_V}  ${DIM}Press ${BLD}n${RST}${DIM} to create a new session${RST}\n"
+    printf "  ${C_V}  ${DIM}Nhan ${BLD}n${RST}${DIM} de tao phien moi${RST}\n"
   else
-    printf "  ${C_V}  ${DIM}%s${RST}\n" "$hdr"
+    # header thẳng cột với data: data có prefix 6 ký tự (2 indent + mũi tên + mark + 2 sp)
+    printf "      ${DIM}%s${RST}\n" "$hdr"
     printf "  %s\n" "$line_mid"
 
     local pos=0
