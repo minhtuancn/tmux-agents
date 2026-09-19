@@ -152,8 +152,9 @@ render() {
 
   local ti="Danh sách phiên"
   local tr="${fc} phiên đang chạy"
-  # pad động: left = C_V(1)+2sp+title+2sp; right = 1sp+tr+2sp+C_V(1)
-  local tp=$((w - ${#ti} - ${#tr} - 11)); [ "$tp" -lt 1 ] && tp=1
+  # pad động: nội dung giữa 2 viền = "  "(2) + ti + "  "(2) + tp + " "(1) + tr + "  "(2)
+  # → tp = w - ti - tr - 7; title full = 2(indent)+│+w+│ = khớp khung
+  local tp=$((w - ${#ti} - ${#tr} - 7)); [ "$tp" -lt 1 ] && tp=1
 
   clear
   echo ""
@@ -368,10 +369,16 @@ while true; do
       [ "$selected" -ge "${#F_IDX[@]}" ] && selected=0
       ;;
 
-    # ── Quick number select (1-9) ──
+    # ── Quick number select: 1-9 hoặc 10-99 (đọc chữ số thứ 2 trong 0.3s) ──
     [1-9])
-      pick=$(( ${key#0} - 1 ))
-      if [ "$pick" -lt "${#F_IDX[@]}" ]; then
+      num="$key"
+      extra=""
+      read -rsn1 -t 0.3 extra 2>/dev/null || true
+      if [[ "$extra" =~ [0-9] ]]; then
+        num="${key}${extra}"
+      fi
+      pick=$(( num - 1 ))
+      if [ "$pick" -ge 0 ] && [ "$pick" -lt "${#F_IDX[@]}" ]; then
         selected="$pick"
         do_switch "$selected"
       fi
