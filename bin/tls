@@ -140,15 +140,19 @@ render() {
 
   # lưu ý: KHÔNG dùng `tr ' ' "$C_H"` — tr chỉ thay byte đầu của ký tự multibyte
   # (─→ \xe2) → vỡ khung unicode. Dùng bash expansion (literal replacement, an toàn mb):
-  local sp; sp=$(printf '%*s' "$((w+2))" '')
+  # sp = w (frame_w đã trừ viền) → mỗi dòng khung = 2(indent)+1+sp+1 = cols, vừa khít, không wrap
+  local sp; sp=$(printf '%*s' "$w" '')
   line_top=$(printf '%s%s%s' "$C_TL" "${sp// /$C_H}" "$C_TR")
   line_mid=$(printf '%s%s%s' "$C_V"  "${sp// /$C_H}" "$C_V")
   line_bot=$(printf '%s%s%s' "$C_BL" "${sp// /$C_H}" "$C_BR")
 
+  local tr="${fc} dang chay"
+  local tp=$((w - ${#tr} - 20)); [ "$tp" -lt 1 ] && tp=1
+
   clear
   echo ""
   printf "  %s\n" "$line_top"
-  printf "  ${BLD}${CYN}  TMUX SESSIONS${RST}  %*s ${DIM}%d dang chay${RST}\n" "$((w-15))" "" "$fc"
+  printf "  ${C_V}  ${BLD}${CYN}TMUX SESSIONS${RST}  %${tp}s ${DIM}%s${RST}  ${C_V}\n" "" "$tr"
   printf "  %s\n" "$line_mid"
 
   if [ "$fc" -eq 0 ]; then
@@ -172,20 +176,19 @@ render() {
       [[ ${#name} -gt 12 ]] && name="${name:0:10}.."
 
       local sel="0"; [ "$pos" -eq "$selected" ] && sel="1"
+      local sc=" "; [ "$sel" = "1" ] && sc="$C_CUR"
       local mark=" "; [ "$name" = "$cur" ] && mark="$C_AT"
 
       if [ "$sel" = "1" ]; then
         # spec: dòng chọn = nền dim (48;5;236) + chữ đậm cyan
-        printf "  ${BGRY}${BLD}${CYN} ${C_CUR}%s %s %s %s %s %s${RST}\n" \
-          "$mark" \
+        printf "  ${BGRY}${BLD}${CYN}${sc} ${mark} %s %s %s %s %s %s${RST}\n" \
           "$(pad_col "$name" 18)" \
           "$(pad_col "$u" 10)" \
           "$(pad_col "$wl" 6)" \
           "$(pad_col "$r" 10)" \
           "$(pad_col "$p" 22)"
       else
-        printf "  ${C_V}  %s %s %s %s %s %s ${RST}\n" \
-          "$mark" \
+        printf "  ${sc} ${mark} %s %s %s %s %s %s\n" \
           "$(pad_col "$name" 18)" \
           "$(pad_col "$u" 10)" \
           "$(pad_col "$wl" 6)" \
