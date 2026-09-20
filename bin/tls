@@ -2,6 +2,14 @@
 # tls — Tmux List & Select (v3 — clean ASCII, number selection)
 set -uo pipefail
 
+# ── Guardrail: tls là TUI cần terminal (stdin/stdout) — nếu chạy qua
+#    `run-shell` (không TTY, stdin=EOF) thì thoát NGAY, tránh vòng lặp vô
+#    hạn đốt CPU. Chạy qua split-window / display-popup / terminal thật.
+if [ ! -t 0 ] || [ ! -t 1 ]; then
+  echo "tls: cần chạy trong tmux (F1 > Sessions) hoặc terminal, không phải run-shell." >&2
+  exit 1
+fi
+
 # ═══════════════════════════════════════════════════════════════════
 #  Colors
 # ═══════════════════════════════════════════════════════════════════
@@ -166,12 +174,13 @@ pv_close() {  # đóng popup preview + dọn file
   pv_net=""
 }
 
-frame_w() {  # độ rộng nội dung (cols - viền 2), min 76 = vừa đủ 7 cột (STT + 6)
+frame_w() {  # độ rộng nội dung (cols - viền 2): max 84; min 76 khi đủ rộng,
+  # còn nếu terminal hẹp (< 80) thì theo đúng cols để khung không bị wrap
   local cols
   cols=$(tput cols 2>/dev/null || echo 80)
   local w=$((cols - 4))
   [ "$w" -gt 84 ] && w=84
-  [ "$w" -lt 76 ] && w=76
+  [ "$w" -lt 76 ] && [ "$cols" -ge 80 ] && w=76
   printf '%s' "$w"
 }
 
@@ -323,6 +332,7 @@ do_switch() {
 
   if [ -n "${TMUX:-}" ]; then
     tmux switch-client -t "$name" 2>/dev/null
+    exit 0   # pane picker đã rời tầm nhìn → đóng pane sạch, trả layout cũ
   else
     exec tmux attach-session -t "$name"
   fi
@@ -351,6 +361,7 @@ do_new() {
 
   if [ -n "${TMUX:-}" ]; then
     tmux switch-client -t "$name" 2>/dev/null
+    exit 0   # đã vào session mới → đóng pane picker
   else
     exec tmux attach-session -t "$name"
   fi
