@@ -266,9 +266,9 @@ render() {
     done
 
     # ── Preview nội dung phiên đang chọn ──
-    # Trong tmux: preview TRỰC TIẾP qua display-popup (attach session thật,
-    # đã mở từ pv_open/pv_sync). Block này chỉ dùng làm fallback khi chạy
-    # ngoài tmux (không thể mở popup trên server không có client view).
+    # Preview tĩnh (capture) hiển thị NGAY trong khung — luôn bật.
+    # Bấm p trong tmux: chuyển sang preview LIVE qua display-popup
+    # (popup attach session thật) và block này tạm ẩn.
     if [ "$PV_OPEN" = "0" ]; then
     printf "  %s\n" "$line_mid"
     local pv_name="${S_NAME[${F_IDX[$selected]}]}"
@@ -290,7 +290,7 @@ render() {
   printf "  %s\n" "$line_mid"
   if [ "$fc" -gt 0 ]; then
     printf "  ${C_V}  ${BLD}[1-%d]${RST} vào  ${BLD}Up/Down${RST} chọn  ${BLD}Enter${RST} switch\n" "$fc"
-    printf "  ${C_V}  ${BLD}n${RST} tạo  ${BLD}d${RST} xóa  ${BLD}r${RST} đổi tên  ${BLD}f${RST} lọc  ${BLD}R${RST} refresh  ${BLD}q${RST} thoát\n"
+    printf "  ${C_V}  ${BLD}n${RST} tạo  ${BLD}d${RST} xóa  ${BLD}r${RST} đổi tên  ${BLD}p${RST} preview live  ${BLD}f${RST} lọc  ${BLD}R${RST} refresh  ${BLD}q${RST} thoát\n"
   fi
   printf "  %s\n" "$line_bot"
   echo ""
@@ -425,8 +425,9 @@ init_chars
 collect
 build_filtered
 
-# Tự mở preview TRỰC TIẾP (display-popup attach session) khi đang trong tmux
-[ -n "${TMUX:-}" ] && pv_open
+# LƯU Ý: KHÔNG tự mở preview popup khi khởi động — mở bằng phím p để
+# danh sách phiên hiện ngay (popup mở trước render sẽ phủ kín danh sách).
+# Preview popup = tmux lồng tmux (attach session thật) — chỉ mở khi chủ động.
 
 while true; do
   render
