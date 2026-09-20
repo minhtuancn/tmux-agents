@@ -96,6 +96,14 @@ build_filtered() {
 
   local fc=${#F_IDX[@]}
   [ "$selected" -ge "$fc" ] && selected=$(( fc > 0 ? fc - 1 : 0 ))
+  # Mặc định con trỏ TẠI session active nhất KHÁC session đang chạy picker
+  # → preview mở đúng phiên "kế tiếp" thường dùng, khớp con trỏ ngay từ đầu
+  if [ "$fc" -gt 1 ] && [ "${S_NAME[${F_IDX[$selected]}]}" = "$cur" ]; then
+    local k
+    for ((k=0; k<fc; k++)); do
+      [ "${S_NAME[${F_IDX[$k]}]}" != "$cur" ] && { selected="$k"; break; }
+    done
+  fi
 }
 
 uptime_str() {
@@ -282,11 +290,11 @@ render() {
       pos=$((pos + 1))
     done
 
-    # ── Preview nội dung phiên đang chọn ──
-    # Preview tĩnh (capture) hiển thị NGAY trong khung — luôn bật.
-    # Bấm p trong tmux: chuyển sang preview TRỰC TIẾP (split pane thật,
-    # xem session nguyên bản) và block này tạm ẩn.
-    if [ "$PV_OPEN" = "0" ]; then
+    # ── Preview ──
+    # TRONG tmux: preview THẬT nằm ở pane dưới (split khi khởi động / phím p)
+    # → không vẽ capture chữ nữa. Chỉ vẽ capture tĩnh khi chạy NGOÀI tmux
+    # (không thể split được) để user vẫn hình dung nội dung phiên đang chọn.
+    if [ -z "${TMUX:-}" ]; then
     printf "  %s\n" "$line_mid"
     local pv_name="${S_NAME[${F_IDX[$selected]}]}"
     if [ "$pv_name" = "$cur" ]; then
@@ -300,6 +308,8 @@ render() {
         printf "  ${C_V}  ${DIM}%s${RST}\n" "$pl"
       done <<< "$(preview_session "$pv_name")"
     fi
+    elif [ "$PV_OPEN" = "0" ]; then
+      printf "  ${C_V}  ${DIM}Bấm ${BLD}p${RST}${DIM} để mở preview phiên (chia đôi màn hình)${RST}\n"
     fi
   fi
 
@@ -446,9 +456,10 @@ init_chars
 collect
 build_filtered
 
-# LƯU Ý: KHÔNG tự mở preview khi khởi động — mở bằng phím p để
-# danh sách phiên hiện ngay (preview mở trước render sẽ chiếm picker).
-# Preview = split pane thật (xem session nguyên bản) — chỉ mở khi chủ động.
+# ── Tự mở preview split NGAY khi khởi động (trong tmux): màn hình chia đôi
+#    trên = danh sách phiên, dưới = session thật (không phải capture chữ).
+#    split pane KHÔNG phủ danh sách nên an toàn khác với popup trước đây.
+[ -n "${TMUX:-}" ] && pv_open
 
 while true; do
   render
