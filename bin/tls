@@ -117,6 +117,8 @@ build_filtered() {
 
   local fc=${#F_IDX[@]}
   [ "$selected" -ge "$fc" ] && selected=$(( fc > 0 ? fc - 1 : 0 ))
+  # Không còn phiên nào khớp → đóng pane preview (tránh ô rác hiển thị sai)
+  [ "$fc" -eq 0 ] && pv_close
   # Mặc định con trỏ TẠI session active nhất KHÁC session đang chạy picker
   # → preview mở đúng phiên "kế tiếp" thường dùng, khớp con trỏ ngay từ đầu
   if [ "$fc" -gt 1 ] && [ "${S_NAME[${F_IDX[$selected]}]}" = "$cur" ]; then
@@ -168,6 +170,12 @@ PV_OPEN=0
 PV_PANE=""
 PV_FILE=""
 pv_net=""
+PV_OPEN_AT=0      # epoch lúc mở preview — tránh đóng nhầm pane client chưa attach kịp
+# Socket server tmux đang chạy (env TMUX = "/tmp/tmux-1000/<sock>,pid,idx").
+# PHẢI truyền cho tls-pv.sh vì nó `unset TMUX` để tạo client lồng — nếu
+# không, `tmux attach` sẽ mặc định server mặc định (sai socket → chết).
+TMUX_SOCK=""
+[ -n "${TMUX:-}" ] && TMUX_SOCK="${TMUX%%,*}"
 
 pv_open() {   # mở pane preview chia dưới (chỉ khi đang trong tmux; -d giữ focus picker)
   [ -n "${TMUX:-}" ] || return 0
@@ -182,19 +190,33 @@ pv_open() {   # mở pane preview chia dưới (chỉ khi đang trong tmux; -d g
   # Không có -t, tmux (khi không có client) split vào window "current" của
   # server — khác cửa sổ picker → preview "biến mất" ở ô khác.
   PV_PANE=$(tmux split-window -P -d -v -l 40% -t "${TMUX_PANE:-}" -c "#{pane_current_path}" \
-    "$HOME/.local/bin/tls-pv.sh '$PV_FILE'" 2>/dev/null | head -1)
-  [ -n "$PV_PANE" ] && PV_OPEN=1
+    "$HOME/.local/bin/tls-pv.sh '$PV_FILE' '${TMUX_SOCK}'" 2>/dev/null | head -1)
+  [ -n "$PV_PANE" ] && PV_OPEN=1 && PV_OPEN_AT=$(date +%s)
 }
 
 pv_sync() {   # $1 = tên session đang chọn → chuyển client preview sang session đó
   [ "$PV_OPEN" = "1" ] || return 0
+  # pane preview đã chết (kill-pane tay / session đang xem bị xóa) → đóng trạng
+  # thái, để lần render sau hiển thị hint "bấm p" thay vì kẹt nửa vời
+  [ -n "$PV_PANE" ] || { pv_close; return 0; }
+  local dv ptt
+  # 1) pane thật sự chết (kill-pane tay…) → đóng
+  dv=$(tmux display -p -t "$PV_PANE" '#{pane_dead}' 2>/dev/null)
+  ptt=$(tmux display -p -t "$PV_PANE" '#{pane_tty}' 2>/dev/null)
+  if [ "$dv" = "1" ] || [ -z "$ptt" ]; then pv_close; return 0; fi
+  # 2) attach ĐÃ KẾT THÚC (session đang xem bị kill → tmux detach client preview,
+  #    để lại pane bash trống — pane_dead vẫn = 0) → đóng. Tránh đóng nhầm pane
+  #    vừa mở (client chưa attach kịp): dung sai 2s kể từ PV_OPEN_AT.
+  if ! tmux list-clients -F '#{client_tty}' 2>/dev/null | grep -qx "$ptt"; then
+    [ $(( $(date +%s) - PV_OPEN_AT )) -le 2 ] && return 0
+    pv_close; return 0
+  fi
   [ "$1" = "$pv_net" ] && return 0
   [ "$1" = "$(current_session)" ] && return 0      # con trỏ ở session picker → giữ preview
   printf '%s\n' "$1" > "$PV_FILE"
   pv_net="$1"
   local tty cl i
   tty=$(tmux display -p -t "$PV_PANE" '#{pane_tty}' 2>/dev/null)
-  [ -z "$tty" ] && return 0
   # client preview tạo chậm hơn pane — retry tối đa 1s
   for i in 1 2 3 4 5 6 7 8 9 10; do
     cl=$(tmux list-clients -F '#{client_name} #{client_tty}' 2>/dev/null \
@@ -378,8 +400,11 @@ do_switch() {
 
   if [ -n "${TMUX:-}" ]; then
     pv_close                    # đóng pane preview trước khi rời khỏi window
-    tmux switch-client -t "$name" 2>/dev/null
-    exit 0   # pane picker đã rời tầm nhìn → đóng pane sạch, trả layout cũ
+    # chỉ đóng pane picker khi switch THÀNH CÔNG — nếu session vừa biến mất
+    # (đã kill bên ngoài) thì ở lại picker thay vì mất màn hình vô ích
+    if tmux switch-client -t "$name" 2>/dev/null; then
+      exit 0
+    fi
   else
     exec tmux attach-session -t "$name"
   fi
@@ -404,12 +429,17 @@ do_new() {
     return
   fi
 
-  tmux new-session -d -s "$name" -c "$dir"
+  tmux new-session -d -s "$name" -c "$dir" 2>/dev/null || {
+    printf "\n  ${RED}Không tạo được session '${BLD}%s${RST}${RED}' (trùng tên?)${RST}\n" "$name"
+    read -r -p "  Press Enter..."
+    return
+  }
 
   if [ -n "${TMUX:-}" ]; then
     pv_close                    # đóng pane preview trước khi rời khỏi window
-    tmux switch-client -t "$name" 2>/dev/null
-    exit 0   # đã vào session mới → đóng pane picker
+    if tmux switch-client -t "$name" 2>/dev/null; then
+      exit 0
+    fi
   else
     exec tmux attach-session -t "$name"
   fi
@@ -464,7 +494,7 @@ do_filter() {
       $'\177'|$'\010')                 # Backspace
         fi="${fi:0:-1}"
         printf "\b \b" ;;
-      $'\n'|$'\r')                     # Enter → apply
+      ''|$'\n'|$'\r')                  # Enter → apply
         filter="$fi"
         echo ""
         return ;;
