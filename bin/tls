@@ -14,8 +14,17 @@ fi
 #    Tự chạy lại trong WINDOW MỚI (như F1 > s) để luôn có đúng 2 ô riêng:
 #    trên = danh sách, dưới = preview — không nhồi vào layout đang làm việc.
 if [ -n "${TMUX:-}" ] && [ "$(tmux display -p -t "${TMUX_PANE:-}" '#{window_panes}' 2>/dev/null)" -gt 1 ]; then
-  tmux new-window -c '#{pane_current_path}' "$HOME/.local/bin/tls" 2>/dev/null
-  exit 0
+  # tmux 3.4 đôi khi KHÔNG tự tăng index (báo 'index 1 in use') khi gọi
+  # new-window không qua client → tự tìm index trống theo vòng lặp.
+  _sess=$(tmux display -p -t "${TMUX_PANE:-}" '#{session_name}' 2>/dev/null)
+  for ((_i = 1; _i <= 64; _i++)); do
+    if tmux new-window -t "${_sess}:${_i}" -c '#{pane_current_path}' \
+        "$HOME/.local/bin/tls" 2>/dev/null; then
+      exit 0
+    fi
+  done
+  # Không mở được window mới → cứ chạy tại chỗ (vẫn dùng được nhưng
+  # preview sẽ bị chèn vào layout hiện tại thay vì cửa sổ riêng).
 fi
 
 # ═══════════════════════════════════════════════════════════════════
