@@ -131,43 +131,51 @@ pad_col() {  # $1=text $2=width $3=align(L|R)
 # ═══════════════════════════════════════════════════════════════════
 #  Render
 # ═══════════════════════════════════════════════════════════════════
-# ── Preview TRỰC TIẾP: display-popup attach session đang chọn (live thật) ──
-# Tmux không cho pane hiển thị nội dung session khác → dùng display-popup
-# (overlay tạo TTY riêng), trong popup chạy tls-pv.sh → attach-session.
-# Đổi chọn → đóng popup cũ + mở popup mới cho session được chọn.
+# ── Preview TRỰC TIẾP: split pane thật (kiểu F1 Split V) ──
+# Pane dưới (40%) chạy tls-pv.sh → attach session đang chọn (tmux lồng =
+# xem session NGUYÊN BẢN, không phải overlay). Đổi chọn → switch-client
+# chuyển client con sang session mới. p = bật/tắt, q thoát sẽ dọn.
 PV_OPEN=0
+PV_PANE=""
 PV_FILE=""
 pv_net=""
 
-pv_open() {   # mở popup preview (chỉ khi đang trong tmux; popup nằm nửa dưới)
+pv_open() {   # mở pane preview chia dưới (chỉ khi đang trong tmux; -d giữ focus picker)
   [ -n "${TMUX:-}" ] || return 0
   [ "$PV_OPEN" = "1" ] && return 0
   [ "${#F_IDX[@]}" -eq 0 ] && return 0
   local name="${S_NAME[${F_IDX[$selected]}]}"
+  [ "$name" = "$(current_session)" ] && return 0   # không preview chính pane picker
   PV_FILE=$(mktemp /tmp/tls-pv.XXXXXX)
   printf '%s\n' "$name" > "$PV_FILE"
   pv_net="$name"
-  pv_show
-  PV_OPEN=1
+  PV_PANE=$(tmux split-window -P -d -v -l 40% -c "#{pane_current_path}" \
+    "$HOME/.local/bin/tls-pv.sh '$PV_FILE'" 2>/dev/null | head -1)
+  [ -n "$PV_PANE" ] && PV_OPEN=1
 }
 
-pv_show() {   # mở popup mới (nội dung = session trong $PV_FILE)
-  tmux display-popup -w 75% -h 45% -x C -y D \
-    -E "$HOME/.local/bin/tls-pv.sh '$PV_FILE'" 2>/dev/null
-}
-
-pv_sync() {   # $1 = tên session đang chọn → đóng + mở popup preview session đó
+pv_sync() {   # $1 = tên session đang chọn → chuyển client preview sang session đó
   [ "$PV_OPEN" = "1" ] || return 0
   [ "$1" = "$pv_net" ] && return 0
+  [ "$1" = "$(current_session)" ] && return 0      # con trỏ ở session picker → giữ preview
   printf '%s\n' "$1" > "$PV_FILE"
   pv_net="$1"
-  tmux display-popup -C 2>/dev/null   # đóng popup đang mở (attach cũ bị hủy)
-  pv_show
+  local tty cl i
+  tty=$(tmux display -p -t "$PV_PANE" '#{pane_tty}' 2>/dev/null)
+  [ -z "$tty" ] && return 0
+  # client preview tạo chậm hơn pane — retry tối đa 1s
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    cl=$(tmux list-clients -F '#{client_name} #{client_tty}' 2>/dev/null \
+      | awk -v t="$tty" '$2==t{print $1; exit}')
+    [ -n "$cl" ] && break
+    sleep 0.1
+  done
+  [ -n "$cl" ] && tmux switch-client -c "$cl" -t "$1" 2>/dev/null
 }
 
-pv_close() {  # đóng popup preview + dọn file
+pv_close() {  # đóng pane preview + dọn file
   if [ "$PV_OPEN" = "1" ]; then
-    tmux display-popup -C 2>/dev/null
+    [ -n "$PV_PANE" ] && { tmux kill-pane -t "$PV_PANE" 2>/dev/null; PV_PANE=""; }
     PV_OPEN=0
   fi
   [ -n "$PV_FILE" ] && { rm -f "$PV_FILE"; PV_FILE=""; }
@@ -222,7 +230,7 @@ render() {
   # → tp = w - ti - tr - 7; title full = 2(indent)+│+w+│ = khớp khung
   local tp=$((w - ${#ti} - ${#tr} - 7)); [ "$tp" -lt 1 ] && tp=1
 
-  # clear mỗi lần vẽ (preview = display-popup live, không auto refresh)
+  # clear mỗi lần vẽ (preview = split pane thật, không auto refresh)
   clear
   echo ""
   printf "  %s\n" "$line_top"
@@ -276,8 +284,8 @@ render() {
 
     # ── Preview nội dung phiên đang chọn ──
     # Preview tĩnh (capture) hiển thị NGAY trong khung — luôn bật.
-    # Bấm p trong tmux: chuyển sang preview LIVE qua display-popup
-    # (popup attach session thật) và block này tạm ẩn.
+    # Bấm p trong tmux: chuyển sang preview TRỰC TIẾP (split pane thật,
+    # xem session nguyên bản) và block này tạm ẩn.
     if [ "$PV_OPEN" = "0" ]; then
     printf "  %s\n" "$line_mid"
     local pv_name="${S_NAME[${F_IDX[$selected]}]}"
@@ -309,7 +317,7 @@ render() {
 #  Input
 # ═══════════════════════════════════════════════════════════════════
 read_key() {
-  # blocking: chờ phím; preview live do popup (tls-pv.sh) đảm nhiệm
+  # blocking: chờ phím; preview do tls-pv.sh (split pane) đảm nhiệm
   local c=""
   read -rsn1 c 2>/dev/null || true
   if [[ "$c" == $'\033' ]]; then
@@ -331,6 +339,7 @@ do_switch() {
   [ "$name" = "$cur" ] && return
 
   if [ -n "${TMUX:-}" ]; then
+    pv_close                    # đóng pane preview trước khi rời khỏi window
     tmux switch-client -t "$name" 2>/dev/null
     exit 0   # pane picker đã rời tầm nhìn → đóng pane sạch, trả layout cũ
   else
@@ -360,6 +369,7 @@ do_new() {
   tmux new-session -d -s "$name" -c "$dir"
 
   if [ -n "${TMUX:-}" ]; then
+    pv_close                    # đóng pane preview trước khi rời khỏi window
     tmux switch-client -t "$name" 2>/dev/null
     exit 0   # đã vào session mới → đóng pane picker
   else
@@ -436,13 +446,13 @@ init_chars
 collect
 build_filtered
 
-# LƯU Ý: KHÔNG tự mở preview popup khi khởi động — mở bằng phím p để
-# danh sách phiên hiện ngay (popup mở trước render sẽ phủ kín danh sách).
-# Preview popup = tmux lồng tmux (attach session thật) — chỉ mở khi chủ động.
+# LƯU Ý: KHÔNG tự mở preview khi khởi động — mở bằng phím p để
+# danh sách phiên hiện ngay (preview mở trước render sẽ chiếm picker).
+# Preview = split pane thật (xem session nguyên bản) — chỉ mở khi chủ động.
 
 while true; do
   render
-  # đồng bộ session đang chọn xuống popup preview (đổi theo vòng lặp chọn)
+  # đồng bộ session đang chọn xuống pane preview (chuyển client con tức thì)
   [ "$PV_OPEN" = "1" ] && [ "${#F_IDX[@]}" -gt 0 ] && pv_sync "${S_NAME[${F_IDX[$selected]}]}"
   key=$(read_key)
 
@@ -498,7 +508,7 @@ while true; do
       do_filter
       selected=0; build_filtered
       ;;
-    'p')                               # Toggle preview popup (chỉ trong tmux)
+    'p')                               # Toggle preview (split pane thật)
       if [ "$PV_OPEN" = "1" ]; then
         pv_close
       else
