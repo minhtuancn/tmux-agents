@@ -231,7 +231,7 @@ preview_session() {  # $1 = tên phiên
   pid=$(tmux list-panes -t "$name" -F "#{pane_active}:#{pane_id}" 2>/dev/null | awk -F: '$1==1{print $2; exit}')
   [ -z "$pid" ] && pid=$(tmux list-panes -t "$name" -F '#{pane_id}' 2>/dev/null | head -1)
   [ -z "$pid" ] && { printf '%s' "(không truy cập được)"; return; }
-  out=$(tmux capture-pane -p -t "$pid" 2>/dev/null)
+  out=$(tmux capture-pane -e -p -t "$pid" 2>/dev/null)
   [ -z "$out" ] && { printf '%s' "(trống)"; return; }
   n=$(printf '%s\n' "$out" | wc -l)
   printf '%s\n' "$out" | head -n "$PV_ROWS"
@@ -327,9 +327,13 @@ render() {
       printf "  ${C_V}  ${CYN}Xem trước: %s${RST}\n" "$pv_name"
       while IFS= read -r pl; do
         pl="${pl//$'\t'/    }"
+        # GIỮ MÀU: escape (ESC) được bảo vệ bằng placeholder, chỉ xóa các
+        # control khác (\r, ...) — trước đây strip hết -> capture trắng đen.
+        pl="${pl//$'\e'/__ESC__}"
         pl=$(printf '%s' "$pl" | LC_ALL=C tr -d '[:cntrl:]')
-        [ "${#pl}" -gt "$((w - 1))" ] && pl="${pl:0:$((w - 1))}"
-        printf "  ${C_V}  ${DIM}%s${RST}\n" "$pl"
+        pl="${pl//__ESC__/$'\e'}"
+        [ "$(dwc "$pl")" -gt "$((w - 1))" ] && pl="${pl:0:$((w * 2))}"
+        printf "  ${C_V}  %s${RST}\n" "$pl"
       done <<< "$(preview_session "$pv_name")"
     fi
     elif [ "$PV_OPEN" = "0" ]; then
