@@ -80,7 +80,11 @@ init_chars() {
 }
 
 current_session() {
-  [ -n "${TMUX:-}" ] && tmux display-message -p '#{session_name}' 2>/dev/null || echo ""
+  # QUAN TRỌNG: phải target pane đang chạy (TMUX_PANE). Không có -t, tmux
+  # khi không có client sẽ trả về session/window "current" của server (SAI),
+  # vd đang chạy ở opencode:6 nhưng lại trả về opencode:2 → preview không
+  # mở, mark/con trỏ vẽ sai.
+  [ -n "${TMUX:-}" ] && tmux display-message -p -t "${TMUX_PANE:-}" '#{session_name}' 2>/dev/null || echo ""
 }
 
 collect() {
@@ -174,7 +178,10 @@ pv_open() {   # mở pane preview chia dưới (chỉ khi đang trong tmux; -d g
   PV_FILE=$(mktemp /tmp/tls-pv.XXXXXX)
   printf '%s\n' "$name" > "$PV_FILE"
   pv_net="$name"
-  PV_PANE=$(tmux split-window -P -d -v -l 40% -c "#{pane_current_path}" \
+  # -t "${TMUX_PANE}" BẮT BUỘC: split vào đúng cửa sổ đang chạy picker.
+  # Không có -t, tmux (khi không có client) split vào window "current" của
+  # server — khác cửa sổ picker → preview "biến mất" ở ô khác.
+  PV_PANE=$(tmux split-window -P -d -v -l 40% -t "${TMUX_PANE:-}" -c "#{pane_current_path}" \
     "$HOME/.local/bin/tls-pv.sh '$PV_FILE'" 2>/dev/null | head -1)
   [ -n "$PV_PANE" ] && PV_OPEN=1
 }
