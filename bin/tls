@@ -10,6 +10,14 @@ if [ ! -t 0 ] || [ ! -t 1 ]; then
   exit 1
 fi
 
+# ── Khi gõ `tls` TRỰC TIẾP từ bash trong pane đang chia sẻ cửa sổ ──
+#    Tự chạy lại trong WINDOW MỚI (như F1 > s) để luôn có đúng 2 ô riêng:
+#    trên = danh sách, dưới = preview — không nhồi vào layout đang làm việc.
+if [ -n "${TMUX:-}" ] && [ "$(tmux display -p -t "${TMUX_PANE:-}" '#{window_panes}' 2>/dev/null)" -gt 1 ]; then
+  tmux new-window -c '#{pane_current_path}' "$HOME/.local/bin/tls" 2>/dev/null
+  exit 0
+fi
+
 # ═══════════════════════════════════════════════════════════════════
 #  Colors
 # ═══════════════════════════════════════════════════════════════════
