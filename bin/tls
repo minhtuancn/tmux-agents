@@ -479,10 +479,11 @@ do_filter() {
   local fi="$filter"
 
   echo ""
-  printf "  ${DIM}Filter:${RST} "
   while true; do
-    tput el 2>/dev/null
-    printf "${YLW}%s${DIM}_${RST}" "$fi"
+    # KHÔNG dùng tput el — không xóa được trong pane tmux → các vẽ cũ chồng
+    # lên nhau thành chuỗi gạch chân "_a_ab_abc_". '\r' + IN ĐÈ lại cả dòng,
+    # escape HEX trực tiếp (không qua biến → tránh literal \033).
+    printf '\r\033[K  \033[2mFilter:\033[0m \033[33m%s\033[2m_\033[0m' "$fi"
 
     local c=""
     read -rsn1 c
@@ -490,10 +491,10 @@ do_filter() {
     case "$c" in
       $'\033')                         # Esc → clear
         filter=""
+        echo ""
         return ;;
       $'\177'|$'\010')                 # Backspace
-        fi="${fi:0:-1}"
-        printf "\b \b" ;;
+        fi="${fi:0:-1}" ;;
       ''|$'\n'|$'\r')                  # Enter → apply
         filter="$fi"
         echo ""
