@@ -268,7 +268,7 @@ render() {
   # prefix "  STT   " = 2 indent + STT(3) + 3 sp (mark + 2 phân cách) = 8 ký tự,
   # khớp chính xác prefix data (2 + stt(3) + 1 + mark(1) + 1)
   local hdr
-  hdr="  $(pad_col "STT" 3 R)   $(pad_col "Phiên" 16) $(pad_col "Thời gian" 10) $(pad_col "Cửa sổ" 6) $(pad_col "Ứng dụng" 10) $(pad_col "Đường dẫn" 20)"
+  hdr="  $(pad_col "STT" 3 R)   $(pad_col "Phiên" 14) $(pad_col "Thời gian" 9) $(pad_col "Cửa sổ" 5) $(pad_col "Ứng dụng" 9) $(pad_col "Đường dẫn" 14)"
 
   # lưu ý: KHÔNG dùng `tr ' ' "$C_H"` — tr chỉ thay byte đầu của ký tự multibyte
   # (─→ \xe2) → vỡ khung unicode. Dùng bash expansion (literal replacement, an toàn mb):
@@ -304,11 +304,21 @@ render() {
     printf "  %s\n" "$line_mid"
 
     local pos=0
+    # giới hạn theo CHIỀU CAO pane (preview chiếm nửa dưới): tránh render dài
+    # hơn pane → cuộn mất khung. maxs = số session tối đa vừa với pane.
+    local maxr; maxr=$(tput lines); [ "$maxr" -lt 8 ] && maxr=8
+    local narrow=0; [ "$w" -lt 66 ] && narrow=1
+    local maxs=$(( (maxr - 9) / 2 )); [ "$narrow" = "0" ] && maxs=$((maxr - 9))
+    local cut=0
     for i in "${F_IDX[@]}"; do
+      [ "$pos" -ge "$maxs" ] && { cut=1; break; }
       local u; u=$(uptime_str "${S_CREATED[$i]}")
       local wl; wl="${S_WINDOWS[$i]}w"
       local r="${S_WINDOW[$i]}"
       local p; p=$(short_path "${S_PATH[$i]}")
+      # pad_col chỉ PAD, không CẮT → path dài làm dòng phụ wrap, vỡ khung.
+      # Cắt thật ở đây (13 + ~ = 14, khớp cột "Đường dẫn").
+      [[ ${#p} -gt 14 ]] && p="${p:0:13}~"
       local name="${S_NAME[$i]}"
       [[ ${#name} -gt 12 ]] && name="${name:0:10}.."
 
@@ -318,23 +328,47 @@ render() {
       if [ "$sel" = "1" ]; then
         # spec: dòng chọn = nền dim (48;5;236) + chữ đậm cyan; STT = số thứ tự
         local stt_str; stt_str=$(pad_col "$((pos + 1))" 3 R)
-        printf "  ${BGRY}${BLD}${CYN}${stt_str} ${mark} %s %s %s %s %s %s${RST}\n" \
-          "$(pad_col "$name" 16)" \
-          "$(pad_col "$u" 10)" \
-          "$(pad_col "$wl" 6)" \
-          "$(pad_col "$r" 10)" \
-          "$(pad_col "$p" 20)"
+        if [ "$w" -lt 66 ]; then
+          # pane hẹp (vd 51 khi preview mở 50:50): bảng 5 cột vẫn wrap →
+          # đường dẫn xuống DÒNG PHỤ riêng, dòng chính chỉ 4 cột (không wrap)
+          printf "  ${BGRY}${BLD}${CYN}${stt_str} ${mark} %s %s %s %s${RST}\n" \
+            "$(pad_col "$name" 14)" \
+            "$(pad_col "$u" 9)" \
+            "$(pad_col "$wl" 5)" \
+            "$(pad_col "$r" 9)"
+          printf "  ${BGRY}${BLD}${CYN}   ${mark}   ${DIM}%s${RST}\n" "$(pad_col "$p" 14)"
+        else
+          printf "  ${BGRY}${BLD}${CYN}${stt_str} ${mark} %s %s %s %s %s${RST}\n" \
+            "$(pad_col "$name" 14)" \
+            "$(pad_col "$u" 9)" \
+            "$(pad_col "$wl" 5)" \
+            "$(pad_col "$r" 9)" \
+            "$(pad_col "$p" 14)"
+        fi
       else
         local stt_str; stt_str=$(pad_col "$((pos + 1))" 3 R)
-        printf "  ${stt_str} ${mark} %s %s %s %s %s %s\n" \
-          "$(pad_col "$name" 16)" \
-          "$(pad_col "$u" 10)" \
-          "$(pad_col "$wl" 6)" \
-          "$(pad_col "$r" 10)" \
-          "$(pad_col "$p" 20)"
+        if [ "$w" -lt 66 ]; then
+          printf "  ${stt_str} ${mark} %s %s %s %s\n" \
+            "$(pad_col "$name" 14)" \
+            "$(pad_col "$u" 9)" \
+            "$(pad_col "$wl" 5)" \
+            "$(pad_col "$r" 9)"
+          printf "  ${DIM}   ${mark}   %s${RST}\n" "$(pad_col "$p" 14)"
+        else
+          printf "  ${stt_str} ${mark} %s %s %s %s %s\n" \
+            "$(pad_col "$name" 14)" \
+            "$(pad_col "$u" 9)" \
+            "$(pad_col "$wl" 5)" \
+            "$(pad_col "$r" 9)" \
+            "$(pad_col "$p" 14)"
+        fi
       fi
       pos=$((pos + 1))
     done
+    if [ "$cut" = "1" ]; then
+      local rest=$((fc - pos))
+      printf "  ${C_V}  ${DIM}+%d phiên nữa — ${BLD}p${RST}${DIM}: thu nhỏ preview${RST}\n" "$rest"
+    fi
 
     # ── Preview ──
     # TRONG tmux: preview THẬT nằm ở pane dưới (split khi khởi động / phím p)
@@ -367,7 +401,8 @@ render() {
   printf "  %s\n" "$line_mid"
   if [ "$fc" -gt 0 ]; then
     printf "  ${C_V}  ${BLD}[1-%d]${RST} vào  ${BLD}Up/Down${RST} chọn  ${BLD}Enter${RST} switch\n" "$fc"
-    printf "  ${C_V}  ${BLD}n${RST} tạo  ${BLD}d${RST} xóa  ${BLD}r${RST} đổi tên  ${BLD}p${RST} preview live  ${BLD}f${RST} lọc  ${BLD}R${RST} refresh  ${BLD}q${RST} thoát\n"
+    printf "  ${C_V}  ${BLD}n${RST} tạo  ${BLD}d${RST} xóa  ${BLD}r${RST} đổi tên  ${BLD}f${RST} lọc  ${BLD}p${RST} preview\n"
+    printf "  ${C_V}  ${BLD}R${RST} refresh  ${BLD}q${RST} thoát\n"
   fi
   printf "  %s\n" "$line_bot"
   echo ""
